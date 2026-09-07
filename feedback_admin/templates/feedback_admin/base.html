@@ -765,6 +765,37 @@ select.btn-ph { background: var(--surface-card); color: var(--text-secondary); b
   .logout-modal-footer { padding: 0 18px 18px; }
 }
 
+/* ── PRINT ────────────────────────────────────────────────────────────── */
+@media print {
+  @page { margin: 1.5cm; }
+
+  /* Hide application chrome */
+  .sidebar, .topbar, .sidebar-overlay,
+  .report-actions, .filter-tabs,
+  .page-eyebrow,
+  .logout-modal-backdrop { display: none !important; }
+
+  /* Reset layout */
+  .main-content { margin-left: 0 !important; margin-top: 0 !important; }
+  .page-body { padding: 0 !important; }
+
+  /* Force colors for print */
+  body, .admin-shell { background: #fff !important; color: #0f172a !important; }
+  .card-block { border: 1px solid #cbd5e1 !important; break-inside: avoid; box-shadow: none !important; }
+  .stat-card { box-shadow: none !important; transform: none !important; }
+  .metric-tile { border: 1px solid #cbd5e1 !important; }
+
+  /* Show the letterhead */
+  .print-header { display: block !important; }
+
+  /* Page break control */
+  .row { break-inside: avoid; }
+  h1, h2, h3 { break-after: avoid; }
+
+  /* Ensure charts are visible */
+  canvas { max-width: 100% !important; }
+}
+
 {% block extra_styles %}{% endblock %}
   </style>
 </head>

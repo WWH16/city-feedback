@@ -20,7 +20,7 @@ from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
@@ -972,6 +972,189 @@ def reports(request):
     }
 
     return render(request, 'feedback_admin/reports.html', context)
+
+
+@staff_required
+def export_report_excel(request):
+    """Generate and return an .xlsx report for the selected period."""
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+
+    period = request.GET.get('period', 'daily')
+    now = timezone.localtime(timezone.now())
+    today = now.date()
+
+    # Period date ranges — mirrors the reports() view logic
+    today_start = timezone.make_aware(datetime.combine(today, time.min))
+    today_end = timezone.make_aware(datetime.combine(today, time.max))
+
+    period_ranges = {
+        'daily': (today_start, today_end),
+        'weekly': (now - timedelta(days=7), now),
+        'monthly': (now - timedelta(days=30), now),
+        'quarterly': (now - timedelta(days=90), now),
+        'annual': (now - timedelta(days=365), now),
+    }
+    if period not in period_ranges:
+        period = 'daily'
+
+    start, end = period_ranges[period]
+    qs = FeedbackEntry.objects.filter(created_at__range=(start, end))
+
+    # Compute summary stats (reuse the existing helper)
+    periods_map = {period: Q(created_at__range=(start, end))}
+    stats = _multi_period_report_data(FeedbackEntry.objects.all(), periods_map)[period]
+
+    # ── Styles ────────────────────────────────────────────────────────────
+    header_font = Font(name='Calibri', bold=True, size=11, color='FFFFFF')
+    header_fill = PatternFill(start_color='0F5A2B', end_color='0F5A2B', fill_type='solid')
+    header_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    thin_border = Border(
+        left=Side(style='thin', color='CBD5E1'),
+        right=Side(style='thin', color='CBD5E1'),
+        top=Side(style='thin', color='CBD5E1'),
+        bottom=Side(style='thin', color='CBD5E1'),
+    )
+    label_font = Font(name='Calibri', bold=True, size=11)
+    value_font = Font(name='Calibri', size=11)
+    title_font = Font(name='Calibri', bold=True, size=14, color='0F5A2B')
+
+    wb = openpyxl.Workbook()
+
+    # ── Sheet 1: Summary ──────────────────────────────────────────────────
+    ws = wb.active
+    ws.title = 'Summary'
+    ws.sheet_properties.tabColor = '169651'
+
+    # Title
+    ws.merge_cells('A1:B1')
+    ws['A1'] = f'PhilHealth CSM Report — {period.title()}'
+    ws['A1'].font = title_font
+    ws['A1'].alignment = Alignment(vertical='center')
+    ws['A2'] = f'Generated: {now.strftime("%B %d, %Y at %I:%M %p")}'
+    ws['A2'].font = Font(name='Calibri', size=10, italic=True, color='475569')
+    ws.append([])  # blank row
+
+    # Overview metrics
+    overview_rows = [
+        ('Total Responses', stats['total']),
+        ('Satisfaction Rate', f"{stats['satisfaction']}%"),
+        ('', ''),
+        ('SQD Distribution', ''),
+        ('Strongly Agree', stats['strongly_agree']),
+        ('Agree', stats['agree']),
+        ('Neither Agree nor Disagree', stats['neither']),
+        ('Disagree', stats['disagree']),
+        ('Strongly Disagree', stats['strongly_disagree']),
+        ('Not Applicable', stats['na']),
+        ('', ''),
+        ('Feedback Categories', ''),
+        ('Compliments', stats['categories']['compliment']),
+        ('Suggestions', stats['categories']['suggestion']),
+        ('Complaints', stats['categories']['complaint']),
+        ('Service Concerns', stats['categories']['concern']),
+        ('Total Categorized', stats['categorized']),
+    ]
+    for label, value in overview_rows:
+        ws.append([label, value])
+        row_num = ws.max_row
+        ws.cell(row=row_num, column=1).font = label_font if label and value == '' else value_font
+        ws.cell(row=row_num, column=2).font = value_font
+        if label and value != '':
+            ws.cell(row=row_num, column=1).font = label_font
+        for col in (1, 2):
+            ws.cell(row=row_num, column=col).border = thin_border
+
+    # Section headers (SQD Distribution, Feedback Categories) get bold styling
+    for row_idx in range(1, ws.max_row + 1):
+        cell = ws.cell(row=row_idx, column=1)
+        if cell.value in ('SQD Distribution', 'Feedback Categories'):
+            cell.font = Font(name='Calibri', bold=True, size=11, color='0F5A2B')
+
+    ws.column_dimensions['A'].width = 32
+    ws.column_dimensions['B'].width = 18
+
+    # ── Sheet 2: Responses ────────────────────────────────────────────────
+    ws2 = wb.create_sheet('Responses')
+    ws2.sheet_properties.tabColor = '23A455'
+
+    response_headers = [
+        'ID', 'Date', 'Time', 'Client Name', 'Age', 'Sex', 'Client Type',
+        'CC1', 'CC2', 'CC3',
+        'SQD0', 'SQD1', 'SQD2', 'SQD3', 'SQD4', 'SQD5', 'SQD6', 'SQD7', 'SQD8',
+        'Experience', 'Category', 'Sentiment', 'Status',
+        'Staff Assisted', 'Comment', 'Suggestions', 'Commendation',
+    ]
+
+    # Write header row
+    for col_idx, header_text in enumerate(response_headers, 1):
+        cell = ws2.cell(row=1, column=col_idx, value=header_text)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_align
+        cell.border = thin_border
+
+    # Write data rows
+    EXPERIENCE_MAP = dict(FeedbackEntry.EXPERIENCE_CHOICES)
+    SENTIMENT_MAP = dict(FeedbackEntry.SENTIMENT_CHOICES)
+    CATEGORY_MAP = dict(FeedbackEntry.CATEGORY_CHOICES)
+    STATUS_MAP = dict(FeedbackEntry.STATUS_CHOICES)
+
+    entries = qs.select_related('staff_assisted').order_by('-created_at')
+    for row_idx, entry in enumerate(entries, 2):
+        local_dt = timezone.localtime(entry.created_at) if entry.created_at else None
+        row_data = [
+            entry.pk,
+            local_dt.strftime('%Y-%m-%d') if local_dt else '',
+            local_dt.strftime('%I:%M %p') if local_dt else '',
+            entry.name_of_client,
+            entry.age,
+            entry.sex,
+            entry.client_type,
+            entry.cc1, entry.cc2, entry.cc3,
+            entry.sqd0, entry.sqd1, entry.sqd2, entry.sqd3,
+            entry.sqd4, entry.sqd5, entry.sqd6, entry.sqd7, entry.sqd8,
+            EXPERIENCE_MAP.get(entry.experience, entry.experience),
+            CATEGORY_MAP.get(entry.category, entry.category),
+            SENTIMENT_MAP.get(entry.sentiment, entry.sentiment),
+            STATUS_MAP.get(entry.status, entry.status),
+            entry.attending_staff_display,
+            entry.comment,
+            entry.comments_suggestions,
+            entry.commendation,
+        ]
+        for col_idx, value in enumerate(row_data, 1):
+            cell = ws2.cell(row=row_idx, column=col_idx, value=value)
+            cell.font = value_font
+            cell.border = thin_border
+
+    # Auto-size key columns (approximate widths)
+    col_widths = {
+        'A': 8, 'B': 12, 'C': 10, 'D': 22, 'E': 6, 'F': 8, 'G': 14,
+        'H': 6, 'I': 6, 'J': 6,
+        'K': 6, 'L': 6, 'M': 6, 'N': 6, 'O': 6, 'P': 6, 'Q': 6, 'R': 6, 'S': 6,
+        'T': 18, 'U': 14, 'V': 12, 'W': 12,
+        'X': 22, 'Y': 36, 'Z': 36, 'AA': 36,
+    }
+    for col_letter, width in col_widths.items():
+        ws2.column_dimensions[col_letter].width = width
+
+    # Freeze the header row
+    ws2.freeze_panes = 'A2'
+
+    # ── Return the file ───────────────────────────────────────────────────
+    period_labels = {
+        'daily': 'Daily', 'weekly': 'Weekly', 'monthly': 'Monthly',
+        'quarterly': 'Quarterly', 'annual': 'Annual',
+    }
+    filename = f'PhilHealth-Report-{period_labels[period]}-{today.isoformat()}.xlsx'
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
 
 
 @superuser_required

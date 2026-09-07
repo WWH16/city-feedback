@@ -13,6 +13,7 @@ urlpatterns = [
     path('responses/<int:entry_id>/notes/add/', views.response_note_add, name='response_note_add'),
     path('sentiment_analysis/',         views.sentiment_analysis, name='sentiment_analysis'),
     path('reports/',                    views.reports,            name='reports'),
+    path('reports/export/excel/',        views.export_report_excel, name='export_report_excel'),
     path('activity-log/',               views.activity_log,       name='activity_log'),
 
     # ── User management ───────────────────────────────────────────────

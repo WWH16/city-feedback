@@ -38,9 +38,10 @@
 .summary-title { font-size: 12px; font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
 .summary-value { font-size: 13px; font-weight: 600; font-family: var(--mono); color: var(--g-primary); }
 
-.export-btn-group {
-  display: flex; gap: 8px; flex-wrap: wrap;
+.report-actions {
+  display: flex; gap: 8px; align-items: flex-start; flex-shrink: 0;
 }
+.print-header { display: none; }
 
 .performance-bar-row {
   display: flex; align-items: center; gap: 12px; padding: 10px 0;
@@ -67,6 +68,17 @@
 
 {% block page_content %}
 
+<!-- PRINT-ONLY HEADER (hidden on screen, visible when printing) -->
+<div class="print-header">
+  <div style="text-align:center; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 2px solid #1e293b;">
+    <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.04em;">Republic of the Philippines</div>
+    <div style="font-size: 13px; font-weight: 800; letter-spacing: 0.02em; margin: 2px 0;">PHILIPPINE HEALTH INSURANCE CORPORATION</div>
+    <div style="font-size: 11px; font-weight: 600;">PhilHealth Regional Office II &mdash; Cauayan City</div>
+    <div style="margin-top: 12px; font-size: 16px; font-weight: 800; letter-spacing: -0.02em;">Customer Satisfaction Measurement Report</div>
+    <div style="font-size: 11px; color: #475569; margin-top: 2px;" id="printPeriodLabel"></div>
+  </div>
+</div>
+
 <!-- PAGE HEADER -->
 <div class="page-header">
   <div class="page-header-row">
@@ -77,6 +89,17 @@
       </div>
       <h1 class="page-title">Reports</h1>
       <p class="page-subtitle">Comprehensive feedback reports with satisfaction metrics and trend analysis.</p>
+    </div>
+    <div class="report-actions">
+      <button type="button" class="btn-ph btn-ph-primary" onclick="exportReportExcel()" id="btnExportExcel">
+        <span class="material-icons-round" aria-hidden="true">table_chart</span>
+        Export Excel
+        <span class="ph-loader"></span>
+      </button>
+      <button type="button" class="btn-ph" onclick="printReport()">
+        <span class="material-icons-round" aria-hidden="true">print</span>
+        Print
+      </button>
     </div>
   </div>
 </div>
@@ -305,41 +328,6 @@
   </div>
 
 </div><!-- /row 2 -->
-
-<!-- EXPORT SECTION -->
-<div class="row g-3 mb-4">
-  <div class="col-12">
-    <div class="card-block">
-      <div class="card-block-head">
-        <h2 class="card-block-title">
-          <span class="material-icons-round">download</span>
-          Export Report
-        </h2>
-        <p style="font-size: 11px; color: var(--text-muted); margin: 0;">Download this report in multiple formats for sharing and analysis.</p>
-      </div>
-      <div class="card-block-body">
-        <div class="export-btn-group">
-          <button type="button" class="btn-ph btn-ph-primary" onclick="exportReportPDF()">
-            <span class="material-icons-round" aria-hidden="true">picture_as_pdf</span>
-            Export as PDF
-          </button>
-          <button type="button" class="btn-ph btn-ph-primary" onclick="exportReportExcel()">
-            <span class="material-icons-round" aria-hidden="true">table_chart</span>
-            Export as Excel
-          </button>
-          <button type="button" class="btn-ph" onclick="printReport()">
-            <span class="material-icons-round" aria-hidden="true">print</span>
-            Print Report
-          </button>
-          <button type="button" class="btn-ph" onclick="shareReport()">
-            <span class="material-icons-round" aria-hidden="true">share</span>
-            Share Report
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
 
 {% endblock %}
 
@@ -633,24 +621,25 @@ function updateReportTrendChart(data, forceRecreate = false) {
 }
 
 /* ── EXPORT FUNCTIONS ── */
-function exportReportPDF() {
-  alert('PDF export: Integrate with a library like jsPDF or server-side PDF generation (e.g., ReportLab).');
-}
+const PERIOD_LABELS = {
+  daily: 'Daily Report',
+  weekly: 'Weekly Report (Last 7 Days)',
+  monthly: 'Monthly Report (Last 30 Days)',
+  quarterly: 'Quarterly Report (Last 90 Days)',
+  annual: 'Annual Report (Last 12 Months)',
+};
 
 function exportReportExcel() {
-  alert('Excel export: Integrate with SheetJS (xlsx) or server-side generation (e.g., openpyxl).');
+  window.location.href = '{% url "export_report_excel" %}?period=' + encodeURIComponent(currentPeriod);
 }
 
 function printReport() {
-  window.print();
-}
-
-function shareReport() {
-  if (navigator.share) {
-    navigator.share({ title: 'PhilHealth Report', text: 'Check out the latest feedback report.' });
-  } else {
-    alert('Share: Copy the report link or email it to stakeholders.');
+  const label = document.getElementById('printPeriodLabel');
+  if (label) {
+    const now = new Date();
+    label.textContent = PERIOD_LABELS[currentPeriod] + ' — Generated ' + now.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
   }
+  window.print();
 }
 
 /* ── THEME & RESIZE ── */
