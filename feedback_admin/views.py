@@ -346,9 +346,22 @@ def dashboard(request):
     trend_data_map = defaultdict(lambda: defaultdict(int))
     for row in trend_counts:
         if row['local_date']:
-            trend_data_map[row['local_date']][row['experience']] = row['count']
+            exp = row['experience']
+            if exp == 'vsat':
+                exp = FeedbackEntry.STRONGLY_AGREE
+            elif exp == 'sat':
+                exp = FeedbackEntry.AGREE
+            elif exp == 'unsat':
+                exp = FeedbackEntry.STRONGLY_DISAGREE
+            trend_data_map[row['local_date']][exp] += row['count']
 
-    trend_dates = sorted(trend_data_map.keys())
+    if trend_data_map:
+        earliest_date = min(trend_data_map.keys())
+        start_date = min(earliest_date, today - timedelta(days=6))
+        total_days = (today - start_date).days + 1
+        trend_dates = [start_date + timedelta(days=i) for i in range(total_days)]
+    else:
+        trend_dates = [today - timedelta(days=i) for i in range(6, -1, -1)]
 
     def pct(value):
         return round((value / total) * 100) if total else 0
@@ -609,18 +622,42 @@ def responses_delete(request):
 @superuser_required
 def sentiment_analysis(request):
     entries = FeedbackEntry.objects.all()
-    counts = entries.aggregate(
-        positive=Count('id', filter=Q(sentiment=FeedbackEntry.POSITIVE)),
-        neutral=Count('id', filter=Q(sentiment=FeedbackEntry.NEUTRAL)),
-        negative=Count('id', filter=Q(sentiment=FeedbackEntry.NEGATIVE)),
-    )
-    positive = counts['positive'] or 0
-    neutral = counts['neutral'] or 0
-    negative = counts['negative'] or 0
-    total = positive + neutral + negative
+    now = timezone.localtime(timezone.now())
+    today = now.date()
+    week_start = now - timedelta(days=7)
+    month_start = now - timedelta(days=30)
+    today_start = timezone.make_aware(datetime.combine(today, time.min))
+    today_end = timezone.make_aware(datetime.combine(today, time.max))
 
-    def pct(n):
-        return round((n / total) * 100) if total else 0
+    def _sentiment_counts(qs):
+        c = qs.aggregate(
+            positive=Count('id', filter=Q(sentiment=FeedbackEntry.POSITIVE)),
+            neutral=Count('id', filter=Q(sentiment=FeedbackEntry.NEUTRAL)),
+            negative=Count('id', filter=Q(sentiment=FeedbackEntry.NEGATIVE)),
+        )
+        pos = c['positive'] or 0
+        neu = c['neutral'] or 0
+        neg = c['negative'] or 0
+        tot = pos + neu + neg
+        def _pct(n):
+            return round((n / tot) * 100) if tot else 0
+        return {
+            'total': tot,
+            'positive': pos,
+            'neutral': neu,
+            'negative': neg,
+            'positive_pct': _pct(pos),
+            'neutral_pct': _pct(neu),
+            'negative_pct': _pct(neg),
+        }
+
+    all_counts = _sentiment_counts(entries)
+    filter_data = {
+        'today': _sentiment_counts(entries.filter(created_at__range=(today_start, today_end))),
+        'week': _sentiment_counts(entries.filter(created_at__gte=week_start)),
+        'month': _sentiment_counts(entries.filter(created_at__gte=month_start)),
+        'all': all_counts,
+    }
 
     trend_counts = (
         entries.exclude(sentiment=FeedbackEntry.PENDING)
@@ -633,22 +670,31 @@ def sentiment_analysis(request):
         if row['local_date']:
             trend_data_map[row['local_date']][row['sentiment']] = row['count']
 
-    trend_dates = sorted(trend_data_map.keys())
+    if trend_data_map:
+        earliest_date = min(trend_data_map.keys())
+        start_date = min(earliest_date, today - timedelta(days=6))
+        total_days = (today - start_date).days + 1
+        trend_dates = [start_date + timedelta(days=i) for i in range(total_days)]
+    else:
+        trend_dates = [today - timedelta(days=i) for i in range(6, -1, -1)]
+
     trend_labels = [f'{day:%b} {day.day}' for day in trend_dates]
 
     def trend_for(sentiment):
         return [trend_data_map[day][sentiment] for day in trend_dates]
 
     context = {
-        'total': total,
-        'positive': positive,
-        'neutral': neutral,
-        'negative': negative,
-        'positive_pct': pct(positive),
-        'neutral_pct': pct(neutral),
-        'negative_pct': pct(negative),
+        'total': all_counts['total'],
+        'positive': all_counts['positive'],
+        'neutral': all_counts['neutral'],
+        'negative': all_counts['negative'],
+        'positive_pct': all_counts['positive_pct'],
+        'neutral_pct': all_counts['neutral_pct'],
+        'negative_pct': all_counts['negative_pct'],
+        'filter_data': filter_data,
 
         'trend_labels': trend_labels,
+        'trend_dates': [day.isoformat() for day in trend_dates],
         'trend_positive': trend_for(FeedbackEntry.POSITIVE),
         'trend_neutral': trend_for(FeedbackEntry.NEUTRAL),
         'trend_negative': trend_for(FeedbackEntry.NEGATIVE),

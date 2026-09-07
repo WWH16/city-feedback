@@ -23,6 +23,45 @@
   .mini-stat-bar-wrap {
     contain: layout style;
   }
+  .chart-type-toggle {
+    display: inline-flex;
+    border: 1px solid var(--border-color, #cbd5e1);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--bg-surface, #ffffff);
+  }
+  .btn-chart-toggle {
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: inherit;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary, #475569);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    transition: background 150ms ease, color 150ms ease;
+  }
+  .btn-chart-toggle:hover {
+    color: var(--text-primary, #0f172a);
+    background: rgba(0, 0, 0, 0.04);
+  }
+  .btn-chart-toggle.active {
+    background: var(--g-primary, #169651);
+    color: #ffffff !important;
+  }
+  [data-theme="dark"] .chart-type-toggle {
+    border-color: rgba(255, 255, 255, 0.12);
+    background: #1e293b;
+  }
+  [data-theme="dark"] .btn-chart-toggle {
+    color: #94a3b8;
+  }
+  [data-theme="dark"] .btn-chart-toggle:hover {
+    color: #f8fafc;
+    background: rgba(255, 255, 255, 0.06);
+  }
   @media (prefers-reduced-motion: reduce) {
     .mini-stat-bar { transition: none !important; }
   }
@@ -177,15 +216,28 @@
 
     <div class="col-12 col-lg-7">
       <div class="card-block h-100">
-        <div class="card-block-head">
-          <h2 class="card-block-title">
+        <div class="card-block-head" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+          <h2 class="card-block-title" style="margin:0;">
             <span class="material-icons-round">show_chart</span>
             Daily SQD Feedback Trend
           </h2>
+          <div class="chart-type-toggle" role="group" aria-label="Chart display type">
+            <button type="button" class="btn-chart-toggle active" id="btnStackedBar" onclick="setTrendChartType('bar')">
+              <span class="material-icons-round" style="font-size:14px;vertical-align:middle;margin-right:3px;">bar_chart</span>Stacked
+            </button>
+            <button type="button" class="btn-chart-toggle" id="btnLineTrend" onclick="setTrendChartType('line')">
+              <span class="material-icons-round" style="font-size:14px;vertical-align:middle;margin-right:3px;">show_chart</span>Lines
+            </button>
+          </div>
         </div>
         <div class="card-block-body">
-          <div class="chart-wrap" style="height:260px;">
-            <canvas id="lineChart" aria-label="Daily SQD feedback trend line chart" role="img"></canvas>
+          <div id="trendEmptyState" class="chart-empty-state d-none" style="height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px;color:var(--text-muted,#64748b);">
+            <span class="material-icons-round" style="font-size:36px;opacity:0.6;">query_stats</span>
+            <div style="font-weight:700;font-size:13px;color:var(--text-primary,#0f172a);">No feedback recorded for this period</div>
+            <div style="font-size:11px;max-width:280px;">Select "This Week", "This Month", or "All Time" to view feedback volume and satisfaction trends.</div>
+          </div>
+          <div class="chart-wrap" id="trendChartWrap" style="height:260px;">
+            <canvas id="lineChart" aria-label="Daily SQD feedback trend chart" role="img"></canvas>
           </div>
         </div>
       </div>
@@ -416,13 +468,47 @@ function updatePieAndLegend(data, forceRecreate = false) {
   setElemText('legendNaPct', naPct + '%');
 }
 
+let currentTrendChartType = 'bar';
+
+function setTrendChartType(type) {
+  if (currentTrendChartType === type) return;
+  currentTrendChartType = type;
+  const btnBar = document.getElementById('btnStackedBar');
+  const btnLine = document.getElementById('btnLineTrend');
+  if (btnBar) btnBar.classList.toggle('active', type === 'bar');
+  if (btnLine) btnLine.classList.toggle('active', type === 'line');
+  renderTrendForPeriod(currentFilterPeriod, true);
+}
+
 function updateLineChart(labels, sa, a, nad, d, sd, na, forceRecreate = false) {
   const canvas = document.getElementById('lineChart');
+  const emptyEl = document.getElementById('trendEmptyState');
+  const wrapEl = document.getElementById('trendChartWrap');
   if (!canvas) return;
+
+  const totalSum = sa.reduce((acc, v) => acc + v, 0) +
+                   a.reduce((acc, v) => acc + v, 0) +
+                   nad.reduce((acc, v) => acc + v, 0) +
+                   d.reduce((acc, v) => acc + v, 0) +
+                   sd.reduce((acc, v) => acc + v, 0) +
+                   na.reduce((acc, v) => acc + v, 0);
+
+  if (labels.length === 0 || totalSum === 0) {
+    if (emptyEl) emptyEl.classList.remove('d-none');
+    if (wrapEl) wrapEl.classList.add('d-none');
+    return;
+  } else {
+    if (emptyEl) emptyEl.classList.add('d-none');
+    if (wrapEl) wrapEl.classList.remove('d-none');
+  }
+
   const ctx       = canvas.getContext('2d');
   const isDark    = document.documentElement.getAttribute('data-theme') === 'dark';
+  const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)';
+  const textColor = isDark ? '#cbd5e1' : '#475569';
+  const isBar     = currentTrendChartType === 'bar';
 
-  if (lineChart && !forceRecreate) {
+  if (lineChart && !forceRecreate && lineChart.config.type === (isBar ? 'bar' : 'line')) {
     lineChart.data.labels = labels;
     lineChart.data.datasets[0].data = sa;
     lineChart.data.datasets[1].data = a;
@@ -436,35 +522,75 @@ function updateLineChart(labels, sa, a, nad, d, sd, na, forceRecreate = false) {
 
   if (lineChart) lineChart.destroy();
 
-  const gridColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(15, 23, 42, 0.08)';
-  const textColor = isDark ? '#cbd5e1' : '#475569';
-  const ptBgColor = isDark ? '#0f172a' : '#ffffff';
+  const datasets = isBar ? [
+    { label: 'Strongly Agree', data: sa, backgroundColor: '#169651', borderRadius: 2, stack: 'sqd', maxBarThickness: 56 },
+    { label: 'Agree', data: a, backgroundColor: '#10b981', borderRadius: 2, stack: 'sqd', maxBarThickness: 56 },
+    { label: 'Neither', data: nad, backgroundColor: '#d97706', borderRadius: 2, stack: 'sqd', maxBarThickness: 56 },
+    { label: 'Disagree', data: d, backgroundColor: '#f97316', borderRadius: 2, stack: 'sqd', maxBarThickness: 56 },
+    { label: 'Strongly Disagree', data: sd, backgroundColor: '#dc2626', borderRadius: 2, stack: 'sqd', maxBarThickness: 56 },
+    { label: 'Not Applicable', data: na, backgroundColor: '#64748b', borderRadius: 2, stack: 'sqd', maxBarThickness: 56 },
+  ] : [
+    { label: 'Strongly Agree', data: sa, borderColor: '#169651', backgroundColor: 'transparent', tension: 0.25, pointRadius: 3, pointHoverRadius: 6, pointBackgroundColor: '#169651', borderWidth: 2 },
+    { label: 'Agree', data: a, borderColor: '#10b981', backgroundColor: 'transparent', tension: 0.25, pointRadius: 3, pointHoverRadius: 6, pointBackgroundColor: '#10b981', borderWidth: 2 },
+    { label: 'Neither', data: nad, borderColor: '#d97706', backgroundColor: 'transparent', tension: 0.25, pointRadius: 3, pointHoverRadius: 6, pointBackgroundColor: '#d97706', borderWidth: 2 },
+    { label: 'Disagree', data: d, borderColor: '#f97316', backgroundColor: 'transparent', tension: 0.25, pointRadius: 3, pointHoverRadius: 6, pointBackgroundColor: '#f97316', borderWidth: 2 },
+    { label: 'Strongly Disagree', data: sd, borderColor: '#dc2626', backgroundColor: 'transparent', tension: 0.25, pointRadius: 3, pointHoverRadius: 6, pointBackgroundColor: '#dc2626', borderWidth: 2 },
+    { label: 'Not Applicable', data: na, borderColor: '#64748b', backgroundColor: 'transparent', tension: 0.25, pointRadius: 3, pointHoverRadius: 6, pointBackgroundColor: '#64748b', borderWidth: 2 },
+  ];
 
   lineChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: labels,
-      datasets: [
-        { label: 'Strongly Agree', data: sa, borderColor: '#169651', backgroundColor: 'rgba(22,150,81,0.1)', tension: 0.35, fill: false, pointRadius: 2, borderWidth: 2 },
-        { label: 'Agree', data: a, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', tension: 0.35, fill: false, pointRadius: 2, borderWidth: 2 },
-        { label: 'Neither', data: nad, borderColor: '#d97706', backgroundColor: 'rgba(217,119,6,0.1)', tension: 0.35, fill: false, pointRadius: 2, borderWidth: 2 },
-        { label: 'Disagree', data: d, borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,0.1)', tension: 0.35, fill: false, pointRadius: 2, borderWidth: 2 },
-        { label: 'Strongly Disagree', data: sd, borderColor: '#dc2626', backgroundColor: 'rgba(220,38,38,0.1)', tension: 0.35, fill: false, pointRadius: 2, borderWidth: 2 },
-        { label: 'Not Applicable', data: na, borderColor: '#64748b', backgroundColor: 'rgba(100,116,139,0.1)', tension: 0.35, fill: false, pointRadius: 2, borderWidth: 2 },
-      ]
-    },
+    type: isBar ? 'bar' : 'line',
+    data: { labels: labels, datasets: datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       animation: { duration: CHART_ANIM_DURATION },
       interaction: { mode: 'index', intersect: false },
       scales: {
-        x: { grid: { color: gridColor }, ticks: { color: textColor, font: { family: "'IBM Plex Sans'", size: 11, weight: '600' }, maxTicksLimit: 8 } },
-        y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: textColor, font: { family: "'IBM Plex Sans'", size: 11, weight: '600' }, stepSize: 5 } }
+        x: {
+          stacked: isBar,
+          grid: { color: gridColor, drawTicks: false },
+          ticks: { color: textColor, font: { family: "'IBM Plex Sans'", size: 11, weight: '600' }, maxTicksLimit: 10 },
+          border: { display: false }
+        },
+        y: {
+          stacked: isBar,
+          beginAtZero: true,
+          grid: { color: gridColor, drawTicks: false },
+          ticks: { color: textColor, font: { family: "'IBM Plex Sans'", size: 11, weight: '600' }, precision: 0 },
+          border: { display: false }
+        }
       },
       plugins: {
-        legend: { position: 'top', align: 'end', labels: { color: textColor, font: { family: "'IBM Plex Sans'", size: 11, weight: '700' }, boxWidth: 8, usePointStyle: true } },
-        tooltip: { backgroundColor: isDark ? '#0f172a' : '#1e293b', titleColor: '#ffffff', bodyColor: '#f1f5f9', padding: 10, cornerRadius: 4 }
+        legend: {
+          position: 'top',
+          align: 'end',
+          labels: {
+            color: textColor,
+            font: { family: "'IBM Plex Sans'", size: 10, weight: '600' },
+            boxWidth: 8,
+            boxHeight: 8,
+            padding: 8,
+            usePointStyle: true,
+            pointStyle: 'circle'
+          }
+        },
+        tooltip: {
+          backgroundColor: isDark ? '#0f172a' : '#1e293b',
+          titleColor: '#ffffff',
+          bodyColor: '#f1f5f9',
+          padding: 10,
+          cornerRadius: 4,
+          callbacks: {
+            footer: function(items) {
+              if (isBar) {
+                const dayTotal = items.reduce((acc, curr) => acc + (curr.parsed.y || 0), 0);
+                return `Total Responses: ${dayTotal}`;
+              }
+              return '';
+            }
+          }
+        }
       }
     }
   });
@@ -478,14 +604,17 @@ function filterTrendByPeriod(period) {
   if (period === 'today') {
     const todayStr = new Date().toLocaleDateString('en-CA');
     const idx = TREND_DATES.reduce((acc, d, i) => { if (d === todayStr) acc.push(i); return acc; }, []);
+    if (idx.length === 0) {
+      return { labels: [], sa: [], a: [], nad: [], d: [], sd: [], na: [] };
+    }
     return {
-      labels: idx.map(i => TREND_LABELS[i]),
-      sa:  idx.map(i => TREND_SA[i] || 0),
-      a:   idx.map(i => TREND_A[i] || 0),
-      nad: idx.map(i => TREND_NAD[i] || 0),
-      d:   idx.map(i => TREND_D[i] || 0),
-      sd:  idx.map(i => TREND_SD[i] || 0),
-      na:  idx.map(i => TREND_NA[i] || 0),
+      labels: ['Today (' + TREND_LABELS[idx[0]] + ')'],
+      sa:  [TREND_SA[idx[0]] || 0],
+      a:   [TREND_A[idx[0]] || 0],
+      nad: [TREND_NAD[idx[0]] || 0],
+      d:   [TREND_D[idx[0]] || 0],
+      sd:  [TREND_SD[idx[0]] || 0],
+      na:  [TREND_NA[idx[0]] || 0],
     };
   }
 
@@ -505,11 +634,7 @@ function filterTrendByPeriod(period) {
 
 function renderTrendForPeriod(period, forceRecreate = false) {
   const f = filterTrendByPeriod(period);
-  if (f.labels.length === 0) {
-    updateLineChart(['No data yet'], [0], [0], [0], [0], [0], [0], forceRecreate);
-  } else {
-    updateLineChart(f.labels, f.sa, f.a, f.nad, f.d, f.sd, f.na, forceRecreate);
-  }
+  updateLineChart(f.labels, f.sa, f.a, f.nad, f.d, f.sd, f.na, forceRecreate);
 }
 
 function setFilter(btn, period) {

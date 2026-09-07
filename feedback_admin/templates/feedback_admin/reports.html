@@ -239,7 +239,12 @@
           <span class="table-info" id="trendRangeCaption">—</span>
         </div>
         <div class="card-block-body">
-          <div class="chart-wrap" style="height: 260px;">
+          <div id="reportTrendEmptyState" class="chart-empty-state d-none" style="height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px;color:var(--text-muted,#64748b);">
+            <span class="material-icons-round" style="font-size:36px;opacity:0.6;">query_stats</span>
+            <div style="font-weight:700;font-size:13px;color:var(--text-primary,#0f172a);">No responses recorded for this report period</div>
+            <div style="font-size:11px;max-width:280px;">Select "Weekly", "Monthly", "Quarterly", or "Annual" to view longer-term response trends.</div>
+          </div>
+          <div class="chart-wrap" id="reportTrendChartWrap" style="height: 260px;">
             <canvas id="reportTrendChart" aria-label="Response trend chart" role="img"></canvas>
           </div>
         </div>
@@ -533,8 +538,21 @@ function updateReportPieChart(data, forceRecreate = false) {
 }
 
 function updateReportTrendChart(data, forceRecreate = false) {
-  const canvas = document.getElementById('reportTrendChart');
+  const canvas     = document.getElementById('reportTrendChart');
+  const emptyState = document.getElementById('reportTrendEmptyState');
+  const chartWrap  = document.getElementById('reportTrendChartWrap');
   if (!canvas) return;
+
+  const totalResponses = (data.trendData || []).reduce((a, b) => a + b, 0);
+  if (totalResponses === 0) {
+    if (emptyState) emptyState.classList.remove('d-none');
+    if (chartWrap) chartWrap.classList.add('d-none');
+    return;
+  } else {
+    if (emptyState) emptyState.classList.add('d-none');
+    if (chartWrap) chartWrap.classList.remove('d-none');
+  }
+
   const ctx       = canvas.getContext('2d');
   const isDark    = document.documentElement.getAttribute('data-theme') === 'dark';
 
@@ -569,7 +587,7 @@ function updateReportTrendChart(data, forceRecreate = false) {
         pointBackgroundColor: '#169651',
         pointBorderColor: ptBgColor,
         pointBorderWidth: 2,
-        pointRadius: 0,
+        pointRadius: 3,
         pointHitRadius: 10,
         pointHoverRadius: 6,
         pointHoverBackgroundColor: '#169651',
@@ -592,7 +610,7 @@ function updateReportTrendChart(data, forceRecreate = false) {
         y: {
           beginAtZero: true,
           grid: { color: gridColor, borderDash: [], drawTicks: false },
-          ticks: { color: textColor, font: { family: "'IBM Plex Sans'", size: 11, weight: '600' } },
+          ticks: { color: textColor, font: { family: "'IBM Plex Sans'", size: 11, weight: '600' }, precision: 0, stepSize: 1 },
           border: { display: false }
         }
       },
