@@ -329,7 +329,11 @@ def dashboard(request):
     month_start = now - timedelta(days=30)
     recent_entries = qs.order_by('-created_at')[:5]
 
-    all_counts = _experience_counts(qs)
+    today_start = timezone.make_aware(datetime.combine(today, time.min))
+    today_end = timezone.make_aware(datetime.combine(today, time.max))
+
+    filter_data = _multi_period_experience_counts(qs, (today_start, today_end), week_start, month_start)
+    all_counts = filter_data['all']
     total = all_counts['total']
     sa = all_counts['strongly_agree']
     a = all_counts['agree']
@@ -372,9 +376,6 @@ def dashboard(request):
     recent_entries_data = list(recent_entries)
     recent_activity = _build_feedback_activity_map([entry.pk for entry in recent_entries_data])
 
-    today_start = timezone.make_aware(datetime.combine(today, time.min))
-    today_end = timezone.make_aware(datetime.combine(today, time.max))
-
     context = {
         'total': total,
         'strongly_agree': sa,
@@ -390,12 +391,7 @@ def dashboard(request):
         'strongly_disagree_pct': pct(sd),
         'na_pct': pct(na),
         'recent_entries_data': [_entry_to_row(entry, recent_activity) for entry in recent_entries_data],
-        'filter_data': {
-            'today': _experience_counts(qs.filter(created_at__range=(today_start, today_end))),
-            'week': _experience_counts(qs.filter(created_at__gte=week_start)),
-            'month': _experience_counts(qs.filter(created_at__gte=month_start)),
-            'all': all_counts,
-        },
+        'filter_data': filter_data,
         'trend_labels': [f'{day:%b} {day.day}' for day in trend_dates],
         'trend_dates': [day.isoformat() for day in trend_dates],
         'trend_strongly_agree': trend_for(FeedbackEntry.STRONGLY_AGREE),
@@ -428,6 +424,12 @@ def responses(request):
     return render(request, 'feedback_admin/responses.html', context)
 
 
+_EXP_DISPLAY = dict(FeedbackEntry.EXPERIENCE_CHOICES)
+_CAT_DISPLAY = dict(FeedbackEntry.CATEGORY_CHOICES)
+_STATUS_DISPLAY = dict(FeedbackEntry.STATUS_CHOICES)
+_SENT_DISPLAY = dict(FeedbackEntry.SENTIMENT_CHOICES)
+
+
 def _entry_to_row(entry, activity=None):
     local_created = timezone.localtime(entry.created_at)
     if activity is None:
@@ -441,20 +443,21 @@ def _entry_to_row(entry, activity=None):
         sentiment_display = 'N/A'
         sentiment_value = FeedbackEntry.NOT_APPLICABLE
     else:
-        sentiment_display = entry.get_sentiment_display()
+        sentiment_display = _SENT_DISPLAY.get(entry.sentiment, entry.sentiment)
         sentiment_value = entry.sentiment
 
+    exp_display = _EXP_DISPLAY.get(entry.experience, entry.experience)
     return {
         'id': entry.id,
         'date': local_created.strftime('%Y-%m-%d'),
         'time': local_created.strftime('%H:%M'),
-        'experience': entry.get_experience_display(),
-        'rating': entry.get_experience_display(),
-        'category': entry.get_category_display(),
+        'experience': exp_display,
+        'rating': exp_display,
+        'category': _CAT_DISPLAY.get(entry.category, entry.category),
         'category_value': entry.category,
         'sentiment': sentiment_display,
         'sentiment_value': sentiment_value,
-        'status': entry.get_status_display(),
+        'status': _STATUS_DISPLAY.get(entry.status, entry.status),
         'status_value': entry.status,
         'comment': entry.comment,
         'notes': notes,
@@ -488,6 +491,157 @@ def _experience_counts(qs):
         'strongly_disagree': sd,
         'na': na_count,
     }
+
+
+def _multi_period_experience_counts(qs, today_range, week_start, month_start):
+    """Consolidates experience counts across all 4 timeframes into a single DB query."""
+    def _cond(period_q, exp_q):
+        return Count('id', filter=(period_q & exp_q) if period_q is not None else exp_q)
+
+    def _period_aggs(prefix, period_q):
+        sa_q = Q(experience__in=[FeedbackEntry.STRONGLY_AGREE, 'vsat'])
+        a_q = Q(experience__in=[FeedbackEntry.AGREE, 'sat'])
+        nad_q = Q(experience=FeedbackEntry.NEITHER)
+        d_q = Q(experience=FeedbackEntry.DISAGREE)
+        sd_q = Q(experience__in=[FeedbackEntry.STRONGLY_DISAGREE, 'unsat'])
+        na_q = Q(experience=FeedbackEntry.NOT_APPLICABLE)
+        tot_q = Count('id', filter=period_q) if period_q is not None else Count('id')
+        return {
+            f'{prefix}_total': tot_q,
+            f'{prefix}_sa': _cond(period_q, sa_q),
+            f'{prefix}_a': _cond(period_q, a_q),
+            f'{prefix}_nad': _cond(period_q, nad_q),
+            f'{prefix}_d': _cond(period_q, d_q),
+            f'{prefix}_sd': _cond(period_q, sd_q),
+            f'{prefix}_na': _cond(period_q, na_q),
+        }
+
+    aggs = {}
+    aggs.update(_period_aggs('all', None))
+    aggs.update(_period_aggs('today', Q(created_at__range=today_range)))
+    aggs.update(_period_aggs('week', Q(created_at__gte=week_start)))
+    aggs.update(_period_aggs('month', Q(created_at__gte=month_start)))
+
+    res = qs.aggregate(**aggs)
+
+    def _extract(prefix):
+        return {
+            'total': res[f'{prefix}_total'] or 0,
+            'strongly_agree': res[f'{prefix}_sa'] or 0,
+            'agree': res[f'{prefix}_a'] or 0,
+            'neither': res[f'{prefix}_nad'] or 0,
+            'disagree': res[f'{prefix}_d'] or 0,
+            'strongly_disagree': res[f'{prefix}_sd'] or 0,
+            'na': res[f'{prefix}_na'] or 0,
+        }
+
+    return {
+        'all': _extract('all'),
+        'today': _extract('today'),
+        'week': _extract('week'),
+        'month': _extract('month'),
+    }
+
+
+def _multi_period_sentiment_counts(qs, today_range, week_start, month_start):
+    """Consolidates sentiment counts across all 4 timeframes into a single DB query."""
+    def _cond(period_q, sent_val):
+        sent_q = Q(sentiment=sent_val)
+        return Count('id', filter=(period_q & sent_q) if period_q is not None else sent_q)
+
+    def _period_aggs(prefix, period_q):
+        return {
+            f'{prefix}_pos': _cond(period_q, FeedbackEntry.POSITIVE),
+            f'{prefix}_neu': _cond(period_q, FeedbackEntry.NEUTRAL),
+            f'{prefix}_neg': _cond(period_q, FeedbackEntry.NEGATIVE),
+        }
+
+    aggs = {}
+    aggs.update(_period_aggs('all', None))
+    aggs.update(_period_aggs('today', Q(created_at__range=today_range)))
+    aggs.update(_period_aggs('week', Q(created_at__gte=week_start)))
+    aggs.update(_period_aggs('month', Q(created_at__gte=month_start)))
+
+    res = qs.aggregate(**aggs)
+
+    def _format(prefix):
+        pos = res[f'{prefix}_pos'] or 0
+        neu = res[f'{prefix}_neu'] or 0
+        neg = res[f'{prefix}_neg'] or 0
+        tot = pos + neu + neg
+        def _pct(n):
+            return round((n / tot) * 100) if tot else 0
+        return {
+            'total': tot,
+            'positive': pos,
+            'neutral': neu,
+            'negative': neg,
+            'positive_pct': _pct(pos),
+            'neutral_pct': _pct(neu),
+            'negative_pct': _pct(neg),
+        }
+
+    return {
+        'all': _format('all'),
+        'today': _format('today'),
+        'week': _format('week'),
+        'month': _format('month'),
+    }
+
+
+def _multi_period_report_data(qs, periods_map):
+    """Consolidates metrics for daily, weekly, monthly, quarterly, and annual periods in 1 query."""
+    aggs = {}
+    for prefix, period_q in periods_map.items():
+        aggs[f'{prefix}_total'] = Count('id', filter=period_q)
+        aggs[f'{prefix}_sa'] = Count('id', filter=period_q & Q(experience__in=[FeedbackEntry.STRONGLY_AGREE, 'vsat']))
+        aggs[f'{prefix}_a'] = Count('id', filter=period_q & Q(experience__in=[FeedbackEntry.AGREE, 'sat']))
+        aggs[f'{prefix}_nad'] = Count('id', filter=period_q & Q(experience=FeedbackEntry.NEITHER))
+        aggs[f'{prefix}_d'] = Count('id', filter=period_q & Q(experience=FeedbackEntry.DISAGREE))
+        aggs[f'{prefix}_sd'] = Count('id', filter=period_q & Q(experience__in=[FeedbackEntry.STRONGLY_DISAGREE, 'unsat']))
+        aggs[f'{prefix}_na'] = Count('id', filter=period_q & Q(experience=FeedbackEntry.NOT_APPLICABLE))
+        aggs[f'{prefix}_compliment'] = Count('id', filter=period_q & Q(category='compliment'))
+        aggs[f'{prefix}_suggestion'] = Count('id', filter=period_q & Q(category='suggestion'))
+        aggs[f'{prefix}_complaint'] = Count('id', filter=period_q & Q(category='complaint'))
+        aggs[f'{prefix}_concern'] = Count('id', filter=period_q & Q(category='concern'))
+
+    res = qs.aggregate(**aggs)
+
+    result = {}
+    for prefix in periods_map:
+        total = res[f'{prefix}_total'] or 0
+        sa = res[f'{prefix}_sa'] or 0
+        a = res[f'{prefix}_a'] or 0
+        nad = res[f'{prefix}_nad'] or 0
+        d = res[f'{prefix}_d'] or 0
+        sd = res[f'{prefix}_sd'] or 0
+        na_count = res[f'{prefix}_na'] or 0
+        satisfaction = round((sa + a) / total * 100) if total else 0
+
+        cat_counts = {
+            'compliment': res[f'{prefix}_compliment'] or 0,
+            'suggestion': res[f'{prefix}_suggestion'] or 0,
+            'complaint': res[f'{prefix}_complaint'] or 0,
+            'concern': res[f'{prefix}_concern'] or 0,
+        }
+        categorized = sum(cat_counts.values())
+
+        result[prefix] = {
+            'total': total,
+            'strongly_agree': sa,
+            'agree': a,
+            'neither': nad,
+            'disagree': d,
+            'strongly_disagree': sd,
+            'na': na_count,
+            'vsat': sa,
+            'sat': a,
+            'neg': sd + d,
+            'satisfaction': satisfaction,
+            'categorized': categorized,
+            'categories': cat_counts,
+        }
+    return result
 
 
 @staff_required
@@ -629,35 +783,8 @@ def sentiment_analysis(request):
     today_start = timezone.make_aware(datetime.combine(today, time.min))
     today_end = timezone.make_aware(datetime.combine(today, time.max))
 
-    def _sentiment_counts(qs):
-        c = qs.aggregate(
-            positive=Count('id', filter=Q(sentiment=FeedbackEntry.POSITIVE)),
-            neutral=Count('id', filter=Q(sentiment=FeedbackEntry.NEUTRAL)),
-            negative=Count('id', filter=Q(sentiment=FeedbackEntry.NEGATIVE)),
-        )
-        pos = c['positive'] or 0
-        neu = c['neutral'] or 0
-        neg = c['negative'] or 0
-        tot = pos + neu + neg
-        def _pct(n):
-            return round((n / tot) * 100) if tot else 0
-        return {
-            'total': tot,
-            'positive': pos,
-            'neutral': neu,
-            'negative': neg,
-            'positive_pct': _pct(pos),
-            'neutral_pct': _pct(neu),
-            'negative_pct': _pct(neg),
-        }
-
-    all_counts = _sentiment_counts(entries)
-    filter_data = {
-        'today': _sentiment_counts(entries.filter(created_at__range=(today_start, today_end))),
-        'week': _sentiment_counts(entries.filter(created_at__gte=week_start)),
-        'month': _sentiment_counts(entries.filter(created_at__gte=month_start)),
-        'all': all_counts,
-    }
+    filter_data = _multi_period_sentiment_counts(entries, (today_start, today_end), week_start, month_start)
+    all_counts = filter_data['all']
 
     trend_counts = (
         entries.exclude(sentiment=FeedbackEntry.PENDING)
@@ -711,67 +838,28 @@ def reports(request):
     quarter_start = now - timedelta(days=90)
     year_start = now - timedelta(days=365)
 
-    def get_period_data(qs):
-        res = qs.aggregate(
-            total=Count('id'),
-            sa=Count('id', filter=Q(experience__in=[FeedbackEntry.STRONGLY_AGREE, 'vsat'])),
-            a=Count('id', filter=Q(experience__in=[FeedbackEntry.AGREE, 'sat'])),
-            nad=Count('id', filter=Q(experience=FeedbackEntry.NEITHER)),
-            d=Count('id', filter=Q(experience=FeedbackEntry.DISAGREE)),
-            sd=Count('id', filter=Q(experience__in=[FeedbackEntry.STRONGLY_DISAGREE, 'unsat'])),
-            na=Count('id', filter=Q(experience=FeedbackEntry.NOT_APPLICABLE)),
-            compliment=Count('id', filter=Q(category='compliment')),
-            suggestion=Count('id', filter=Q(category='suggestion')),
-            complaint=Count('id', filter=Q(category='complaint')),
-            concern=Count('id', filter=Q(category='concern')),
-        )
-        total = res['total'] or 0
-        sa = res['sa'] or 0
-        a = res['a'] or 0
-        nad = res['nad'] or 0
-        d = res['d'] or 0
-        sd = res['sd'] or 0
-        na_count = res['na'] or 0
-        satisfaction = round((sa + a) / total * 100) if total else 0
-
-        cat_counts = {
-            'compliment': res['compliment'] or 0,
-            'suggestion': res['suggestion'] or 0,
-            'complaint': res['complaint'] or 0,
-            'concern': res['concern'] or 0,
-        }
-        categorized = sum(cat_counts.values())
-
-        return {
-            'total': total,
-            'strongly_agree': sa,
-            'agree': a,
-            'neither': nad,
-            'disagree': d,
-            'strongly_disagree': sd,
-            'na': na_count,
-            'vsat': sa,
-            'sat': a,
-            'neg': sd + d,
-            'satisfaction': satisfaction,
-            'categorized': categorized,
-            'categories': cat_counts,
-        }
-
-    # Basic stats for templates
     today_start = timezone.make_aware(datetime.combine(today, time.min))
     today_end = timezone.make_aware(datetime.combine(today, time.max))
+
+    periods_map = {
+        'daily': Q(created_at__range=(today_start, today_end)),
+        'weekly': Q(created_at__gte=week_start),
+        'monthly': Q(created_at__gte=month_start),
+        'quarterly': Q(created_at__gte=quarter_start),
+        'annual': Q(created_at__gte=year_start),
+    }
+    period_stats = _multi_period_report_data(FeedbackEntry.objects.all(), periods_map)
+    daily_data = period_stats['daily']
+    weekly_data = period_stats['weekly']
+    monthly_data = period_stats['monthly']
+    quarterly_data = period_stats['quarterly']
+    annual_data = period_stats['annual']
+
     daily_qs = FeedbackEntry.objects.filter(created_at__range=(today_start, today_end))
     weekly_qs = FeedbackEntry.objects.filter(created_at__gte=week_start)
     monthly_qs = FeedbackEntry.objects.filter(created_at__gte=month_start)
     quarterly_qs = FeedbackEntry.objects.filter(created_at__gte=quarter_start)
     annual_qs = FeedbackEntry.objects.filter(created_at__gte=year_start)
-
-    daily_data = get_period_data(daily_qs)
-    weekly_data = get_period_data(weekly_qs)
-    monthly_data = get_period_data(monthly_qs)
-    quarterly_data = get_period_data(quarterly_qs)
-    annual_data = get_period_data(annual_qs)
 
     def _hourly_trend(qs):
         """Buckets entries by hour-of-day (0–23) — for a single day's queryset."""
@@ -888,22 +976,24 @@ def activity_log(request):
     Government-facing audit trail sourced entirely from Django's built-in
     django_admin_log table.
     """
-    logs = (LogEntry.objects
-            .select_related('user', 'content_type')
-            .order_by('-action_time'))
+    logs = list(
+        LogEntry.objects
+        .select_related('user', 'content_type')
+        .order_by('-action_time')
+    )
 
     feedback_ct = _feedback_content_type()
-    feedback_ids_raw = (
-        LogEntry.objects.filter(content_type=feedback_ct)
-        .exclude(object_id='')
-        .values_list('object_id', flat=True)
-    )
-    valid_pks = [int(pk) for pk in feedback_ids_raw if pk and pk.isdigit()]
+    feedback_ct_id = feedback_ct.pk
+    valid_pks = [
+        int(log.object_id)
+        for log in logs
+        if log.content_type_id == feedback_ct_id and log.object_id and log.object_id.isdigit()
+    ]
     feedback_entries = {e.pk: e for e in FeedbackEntry.objects.filter(pk__in=valid_pks)}
 
     rows = []
     for log in logs:
-        is_fb = log.content_type_id == feedback_ct.pk if log.content_type_id else False
+        is_fb = log.content_type_id == feedback_ct_id
         entry = feedback_entries.get(int(log.object_id)) if is_fb and log.object_id and log.object_id.isdigit() else None
         rows.append(_format_audit_row(log, entry))
 
