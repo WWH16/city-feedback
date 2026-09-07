@@ -173,6 +173,22 @@ body {
   padding-right: 32px;
 }
 
+.csm-paper-select:disabled,
+.csm-paper-input:disabled {
+  background-color: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
+  border-color: #cbd5e1;
+  opacity: 0.85;
+}
+
+@media (max-width: 640px) {
+  .csm-paper-input,
+  .csm-paper-select {
+    font-size: 16px;
+  }
+}
+
 input[type="datetime-local"].csm-paper-input::-webkit-calendar-picker-indicator {
   cursor: pointer;
   padding: 2px;

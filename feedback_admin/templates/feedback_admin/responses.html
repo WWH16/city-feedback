@@ -18,6 +18,11 @@
 .expand-btn:hover { color: var(--g-primary); background: var(--surface-page); }
 .expand-btn .material-icons-round { font-size: 18px; }
 
+.table-controls-right {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
 .detail-row td {
   padding: 0 !important;
   border-bottom: 1px solid var(--border) !important;
@@ -299,6 +304,9 @@
           <option value="Reviewed">Reviewed</option>
           <option value="Resolved">Resolved</option>
         </select>
+        <select class="btn-ph" id="staffFilter" onchange="applyFilters()" aria-label="Filter by attending staff" style="cursor:pointer">
+          <option value="">All Staff</option>
+        </select>
         <select class="btn-ph" id="dateRangeFilter" onchange="applyFilters()" aria-label="Filter by date range" style="cursor:pointer">
           <option value="all">All Time</option>
           <option value="today">Today</option>
@@ -488,6 +496,7 @@ function applyFilters(keepPage = false) {
   const category   = document.getElementById('categoryFilter').value;
   const sentiment  = document.getElementById('sentimentFilter').value;
   const status     = document.getElementById('statusFilter').value;
+  const staffFilter = (document.getElementById('staffFilter') || {}).value || '';
   activeDateRange  = document.getElementById('dateRangeFilter').value;
 
   filteredRows = ALL_DATA.filter(r => {
@@ -503,7 +512,8 @@ function applyFilters(keepPage = false) {
     const matchC    = !category   || r.category   === category;
     const matchS    = !sentiment  || r.sentiment  === sentiment;
     const matchSt   = !status     || r.status     === status;
-    return matchQ && matchE && matchC && matchS && matchSt && inDateRange(r);
+    const matchStaff = !staffFilter ? true : (staffFilter === '__unassigned__' ? !r.staff : r.staff === staffFilter);
+    return matchQ && matchE && matchC && matchS && matchSt && matchStaff && inDateRange(r);
   });
   const maxPage = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   if (keepPage) {
@@ -1021,6 +1031,7 @@ function executeDeleteResponses() {
     }
 
     // 4. Update table, bulk bar and pagination BEFORE the toast shows up
+    populateStaffFilter();
     applyFilters(true);
     updateBulkBar();
 
@@ -1056,7 +1067,39 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
+function populateStaffFilter() {
+  const staffSelect = document.getElementById('staffFilter');
+  if (!staffSelect) return;
+  const staffSet = new Set();
+  let hasUnassigned = false;
+  ALL_DATA.forEach(r => {
+    if (r.staff && r.staff.trim()) {
+      staffSet.add(r.staff.trim());
+    } else {
+      hasUnassigned = true;
+    }
+  });
+  const currentVal = staffSelect.value;
+  staffSelect.innerHTML = '<option value="">All Staff</option>';
+  Array.from(staffSet).sort().forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    staffSelect.appendChild(opt);
+  });
+  if (hasUnassigned) {
+    const unassignedOpt = document.createElement('option');
+    unassignedOpt.value = '__unassigned__';
+    unassignedOpt.textContent = '— Unassigned Staff —';
+    staffSelect.appendChild(unassignedOpt);
+  }
+  staffSelect.value = currentVal;
+}
+
 /* ── INIT ── */
-function pageInit() { renderTable(); }
+function pageInit() {
+  populateStaffFilter();
+  renderTable();
+}
 </script>
 {% endblock %}

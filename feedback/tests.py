@@ -153,6 +153,36 @@ class SubmitFeedbackAutoAnalysisTests(TestCase):
         self.assertNotContains(response, 'Boss Administrator')
         self.assertContains(response, 'id="staffAssisted"')
 
+    def test_submit_feedback_authoritative_staff_name_overrides_spoofed_payload(self):
+        from django.contrib.auth.models import User
+        staff_user = User.objects.create_user(
+            username='official_clara',
+            first_name='Clara',
+            last_name='Reyes',
+            is_staff=True,
+            is_active=True,
+            is_superuser=False,
+        )
+        payload = {
+            'experience': 'Strongly Agree',
+            'staff_assisted': staff_user.id,
+            'staff_name': 'Spoofed Malicious Name',
+            'sqd0': 5,
+        }
+        response = self._submit(payload)
+        self.assertEqual(response.status_code, 201)
+        entry = FeedbackEntry.objects.latest('id')
+        self.assertEqual(entry.staff_assisted, staff_user)
+        self.assertEqual(entry.staff_name, 'Clara Reyes')
+
+    def test_index_page_empty_staff_shows_disabled_placeholder(self):
+        from django.contrib.auth.models import User
+        User.objects.filter(is_staff=True, is_superuser=False).delete()
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'disabled')
+        self.assertContains(response, '-- No Attending Staff Listed --')
+
 
 class SentimentServiceTests(TestCase):
     def test_analyze_comment_with_form_headers(self):

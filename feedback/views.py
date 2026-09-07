@@ -17,7 +17,7 @@ def index(request):
         is_active=True,
         is_staff=True,
         is_superuser=False,
-    ).order_by('first_name', 'last_name', 'username')
+    ).only('id', 'first_name', 'last_name', 'username').order_by('first_name', 'last_name', 'username')
     return render(request, 'feedback/index.html', {'staff_members': staff_members})
 
 
@@ -118,7 +118,7 @@ def submit_feedback(request):
 
     staff_id = payload.get('staff_assisted') or payload.get('staff_id')
     staff_user = None
-    staff_name = (payload.get('staff_name') or '').strip()
+    staff_name = ''
 
     if staff_id:
         try:
@@ -127,8 +127,8 @@ def submit_feedback(request):
                 is_active=True,
                 is_staff=True,
                 is_superuser=False,
-            ).first()
-            if staff_user and not staff_name:
+            ).only('id', 'first_name', 'last_name', 'username').first()
+            if staff_user:
                 staff_name = staff_user.get_full_name() or staff_user.username
         except (ValueError, TypeError):
             pass
