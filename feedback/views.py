@@ -13,16 +13,31 @@ from .services import analyze_comment_sentiment
 
 @ensure_csrf_cookie
 def index(request):
+    config = FeedbackConfiguration.get_solo()
+    survey_enabled = config.survey_enabled
+    offline_message = config.get_survey_offline_message()
+
     staff_members = User.objects.filter(
         is_active=True,
         is_staff=True,
         is_superuser=False,
     ).only('id', 'first_name', 'last_name', 'username').order_by('first_name', 'last_name', 'username')
-    return render(request, 'feedback/index.html', {'staff_members': staff_members})
+    return render(request, 'feedback/index.html', {
+        'staff_members': staff_members,
+        'survey_enabled': survey_enabled,
+        'offline_message': offline_message,
+    })
 
 
 @require_POST
 def submit_feedback(request):
+    if not FeedbackConfiguration.survey_is_enabled():
+        return JsonResponse({
+            'ok': False,
+            'error': FeedbackConfiguration.get_survey_offline_message(),
+            'survey_disabled': True,
+        }, status=403)
+
     try:
         payload = json.loads(request.body.decode('utf-8'))
     except json.JSONDecodeError:

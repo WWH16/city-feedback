@@ -124,6 +124,15 @@ class FeedbackEntry(models.Model):
 
 
 class FeedbackConfiguration(models.Model):
+    survey_enabled = models.BooleanField(
+        default=True,
+        help_text='Controls whether citizens can access and submit the public feedback form.'
+    )
+    survey_offline_message = models.TextField(
+        blank=True,
+        default='Ang feedback system ay pansamantalang hindi available. Pakisubukan muli mamaya.',
+        help_text='Notice shown to citizens when public feedback submissions are disabled.'
+    )
     auto_analysis_enabled = models.BooleanField(default=True)
     daily_summary_enabled = models.BooleanField(default=False)
     notification_email = models.EmailField(blank=True, default='')
@@ -140,7 +149,8 @@ class FeedbackConfiguration(models.Model):
 
     def __str__(self):
         state = 'enabled' if self.auto_analysis_enabled else 'disabled'
-        return f'Feedback configuration ({state})'
+        survey_state = 'active' if self.survey_enabled else 'paused'
+        return f'Feedback configuration (survey: {survey_state}, auto-analysis: {state})'
 
     @classmethod
     def get_solo(cls):
@@ -149,6 +159,8 @@ class FeedbackConfiguration(models.Model):
         except (OperationalError, ProgrammingError):
             return cls(
                 pk=1,
+                survey_enabled=True,
+                survey_offline_message='Ang feedback system ay pansamantalang hindi available. Pakisubukan muli mamaya.',
                 auto_analysis_enabled=True,
                 daily_summary_enabled=False,
                 notification_email='',
@@ -159,4 +171,12 @@ class FeedbackConfiguration(models.Model):
     @classmethod
     def auto_analysis_is_enabled(cls):
         return cls.get_solo().auto_analysis_enabled
+
+    @classmethod
+    def survey_is_enabled(cls):
+        return cls.get_solo().survey_enabled
+
+    @classmethod
+    def get_survey_offline_message(cls):
+        return cls.get_solo().survey_offline_message or 'Ang feedback system ay pansamantalang hindi available. Pakisubukan muli mamaya.'
 

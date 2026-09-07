@@ -57,6 +57,33 @@
 
       </div>
 
+      {% if not survey_enabled %}
+      <!-- ── SERVICE PAUSED / OFFLINE NOTICE ──────────────────────────────── -->
+      <div class="py-10 sm:py-14 px-4 text-center max-w-lg mx-auto space-y-5">
+        <!-- COLORIZED STATUS ICON DISC -->
+        <div class="w-16 h-16 rounded-full bg-amber-100 border-2 border-amber-300 flex items-center justify-center text-amber-800 shadow-sm mx-auto" aria-hidden="true">
+          <span class="material-icons-round text-3xl">pause_circle</span>
+        </div>
+
+        <div class="space-y-2">
+          <div class="inline-flex items-center px-3 py-0.5 text-[11px] font-bold uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300 rounded-[3px]">
+            Submissions Paused
+          </div>
+
+          <h1 class="text-base sm:text-xl font-black text-slate-900 tracking-tight uppercase" style="text-wrap: balance;">
+            Online Feedback Form is Currently Unavailable
+          </h1>
+        </div>
+
+        <!-- HIGHLIGHTED OFFLINE NOTICE MESSAGE -->
+        <div class="p-4 sm:p-5 bg-amber-50/80 border border-amber-200/90 rounded-[4px] text-center shadow-xs">
+          <p class="text-xs sm:text-sm text-amber-950 font-semibold leading-relaxed m-0" style="text-wrap: pretty;">
+            {{ offline_message }}
+          </p>
+        </div>
+      </div>
+      {% else %}
+
       <!-- TITLE -->
       <div class="text-center pt-1 pb-1">
         <h1 class="text-base sm:text-xl md:text-2xl font-black text-slate-900 tracking-tight uppercase">Client Satisfaction Measurement (CSM) Form</h1>
@@ -510,6 +537,7 @@
         </div>
 
       </form>
+      {% endif %}
     </div>
 
   </main>

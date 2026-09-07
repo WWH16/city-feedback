@@ -356,3 +356,67 @@ class DailySummaryEmailTests(TestCase):
             self.assertTrue(res_header.json().get('ok'))
 
 
+class SurveyAvailabilityTests(TestCase):
+    def setUp(self):
+        self.config = FeedbackConfiguration.get_solo()
+        self.config.survey_enabled = True
+        self.config.survey_offline_message = 'Custom offline notice for testing.'
+        self.config.save()
+
+    def test_index_renders_form_when_survey_enabled(self):
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['survey_enabled'])
+        self.assertContains(response, 'id="csmForm"')
+        self.assertNotContains(response, 'Online Feedback Form is Currently Unavailable')
+
+    def test_index_renders_offline_notice_when_survey_disabled(self):
+        self.config.survey_enabled = False
+        self.config.save()
+
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context['survey_enabled'])
+        self.assertContains(response, 'Online Feedback Form is Currently Unavailable')
+        self.assertContains(response, 'Custom offline notice for testing.')
+        self.assertNotContains(response, 'id="csmForm"')
+
+    def test_submit_feedback_blocked_when_survey_disabled(self):
+        self.config.survey_enabled = False
+        self.config.save()
+
+        response = self.client.post(
+            '/submit/',
+            data=json.dumps({
+                'experience': FeedbackEntry.AGREE,
+                'comment': 'Trying to submit while offline.',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 403)
+        data = response.json()
+        self.assertFalse(data['ok'])
+        self.assertTrue(data.get('survey_disabled'))
+        self.assertEqual(data['error'], 'Custom offline notice for testing.')
+        self.assertEqual(FeedbackEntry.objects.count(), 0)
+
+    def test_submit_feedback_allowed_when_survey_enabled(self):
+        self.config.survey_enabled = True
+        self.config.save()
+
+        response = self.client.post(
+            '/submit/',
+            data=json.dumps({
+                'experience': FeedbackEntry.STRONGLY_AGREE,
+                'comment': 'Submitting while active.',
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        self.assertTrue(data['ok'])
+        self.assertEqual(FeedbackEntry.objects.count(), 1)
+
+
