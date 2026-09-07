@@ -201,6 +201,13 @@ function handleSubmitCSM(event) {
   var servicesAvailed = Array.from(document.querySelectorAll('input[name="services_availed"]:checked'))
     .map(function (cb) { return cb.value; });
 
+  var staffSelect = document.getElementById('staffAssisted');
+  var staffAssistedVal = staffSelect && staffSelect.value ? staffSelect.value : null;
+  var staffNameVal = '';
+  if (staffSelect && staffSelect.selectedIndex > 0) {
+    staffNameVal = (staffSelect.options[staffSelect.selectedIndex].text || '').trim();
+  }
+
   var payload = {
     date_time: (document.getElementById('dateTime') || {}).value || null,
     contact_no: (document.getElementById('contactNo') || {}).value || '',
@@ -209,6 +216,8 @@ function handleSubmitCSM(event) {
     client_type: (document.querySelector('input[name="client_type"]:checked') || {}).value || '',
     sex: (document.querySelector('input[name="sex"]:checked') || {}).value || '',
     name_of_client: (document.getElementById('clientName') || {}).value || '',
+    staff_assisted: staffAssistedVal,
+    staff_name: staffNameVal,
     services_availed: servicesAvailed,
     cc1: (document.querySelector('input[name="cc1"]:checked') || {}).value || '',
     cc2: (document.querySelector('input[name="cc2"]:checked') || {}).value || '',
@@ -310,6 +319,8 @@ function resetCSMForm() {
 
   var form = document.getElementById('csmForm');
   if (form) form.reset();
+  var staffSel = document.getElementById('staffAssisted');
+  if (staffSel) staffSel.selectedIndex = 0;
 
   updateDateTime();
 

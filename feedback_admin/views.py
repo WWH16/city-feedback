@@ -327,7 +327,7 @@ def dashboard(request):
     today = now.date()
     week_start = now - timedelta(days=7)
     month_start = now - timedelta(days=30)
-    recent_entries = qs.order_by('-created_at')[:5]
+    recent_entries = qs.select_related('staff_assisted').order_by('-created_at')[:5]
 
     today_start = timezone.make_aware(datetime.combine(today, time.min))
     today_end = timezone.make_aware(datetime.combine(today, time.max))
@@ -406,7 +406,7 @@ def dashboard(request):
 
 @staff_required
 def responses(request):
-    entries = FeedbackEntry.objects.order_by('-created_at')
+    entries = FeedbackEntry.objects.select_related('staff_assisted').order_by('-created_at')
     counts = _experience_counts(entries)
     entries_data = list(entries)
     activity_map = _build_feedback_activity_map([entry.pk for entry in entries_data])
@@ -447,6 +447,7 @@ def _entry_to_row(entry, activity=None):
         sentiment_value = entry.sentiment
 
     exp_display = _EXP_DISPLAY.get(entry.experience, entry.experience)
+    staff_display = entry.attending_staff_display
     return {
         'id': entry.id,
         'date': local_created.strftime('%Y-%m-%d'),
@@ -460,6 +461,9 @@ def _entry_to_row(entry, activity=None):
         'status': _STATUS_DISPLAY.get(entry.status, entry.status),
         'status_value': entry.status,
         'comment': entry.comment,
+        'name_of_client': entry.name_of_client or '',
+        'client_type': entry.client_type or '',
+        'staff': staff_display,
         'notes': notes,
         'status_history': status_history,
     }

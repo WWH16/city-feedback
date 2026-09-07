@@ -5,6 +5,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
+from django.contrib.auth.models import User
 from .models import FeedbackConfiguration, FeedbackEntry
 from .services import analyze_comment_sentiment
 
@@ -12,7 +13,12 @@ from .services import analyze_comment_sentiment
 
 @ensure_csrf_cookie
 def index(request):
-    return render(request, 'feedback/index.html')
+    staff_members = User.objects.filter(
+        is_active=True,
+        is_staff=True,
+        is_superuser=False,
+    ).order_by('first_name', 'last_name', 'username')
+    return render(request, 'feedback/index.html', {'staff_members': staff_members})
 
 
 @require_POST
@@ -110,6 +116,23 @@ def submit_feedback(request):
         except (ValueError, TypeError):
             return None
 
+    staff_id = payload.get('staff_assisted') or payload.get('staff_id')
+    staff_user = None
+    staff_name = (payload.get('staff_name') or '').strip()
+
+    if staff_id:
+        try:
+            staff_user = User.objects.filter(
+                pk=int(staff_id),
+                is_active=True,
+                is_staff=True,
+                is_superuser=False,
+            ).first()
+            if staff_user and not staff_name:
+                staff_name = staff_user.get_full_name() or staff_user.username
+        except (ValueError, TypeError):
+            pass
+
     entry = FeedbackEntry.objects.create(
         experience=experience,
         comment=comment,
@@ -121,6 +144,8 @@ def submit_feedback(request):
         client_type=(payload.get('client_type') or '')[:100],
         sex=(payload.get('sex') or '')[:50],
         name_of_client=(payload.get('name_of_client') or '')[:100],
+        staff_assisted=staff_user,
+        staff_name=staff_name[:150],
         services_availed=payload.get('services_availed') if isinstance(payload.get('services_availed'), list) else [],
         cc1=str(payload.get('cc1') or '')[:10],
         cc2=str(payload.get('cc2') or '')[:10],

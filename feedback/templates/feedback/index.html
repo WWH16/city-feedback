@@ -87,7 +87,7 @@
               </div>
               <div class="paper-info-cell">
                 <label for="contactNo" class="block text-[11px] font-bold text-slate-900 uppercase mb-1">Contact No.</label>
-                <input type="tel" id="contactNo" name="contact_no" placeholder="e.g. 09171234567" maxlength="20" autocomplete="tel" pattern="[0-9+\s\-()]*" class="csm-paper-input" required>
+                <input type="tel" id="contactNo" name="contact_no" placeholder="e.g. 09171234567" maxlength="20" autocomplete="tel" pattern="[0-9+\s\(\)\-]*" class="csm-paper-input" required>
               </div>
               <div class="paper-info-cell">
                 <label for="emailAddress" class="block text-[11px] font-bold text-slate-900 uppercase mb-1">Email Address</label>
@@ -137,12 +137,25 @@
               </div>
             </div>
 
-            <!-- ROW 4: NAME OF CLIENT -->
-            <div class="p-3">
-              <label for="clientName" class="block text-[11px] font-bold text-slate-900 uppercase mb-1">
-                Name of Client <span class="font-normal text-slate-500 lowercase">(optional)</span>:
-              </label>
-              <input type="text" id="clientName" name="name_of_client" placeholder="e.g. Juan Dela Cruz" maxlength="100" autocomplete="name" class="csm-paper-input">
+            <!-- ROW 4: NAME OF CLIENT & ATTENDING STAFF -->
+            <div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-200">
+              <div class="p-3">
+                <label for="clientName" class="block text-[11px] font-bold text-slate-900 uppercase mb-1">
+                  Name of Client <span class="font-normal text-slate-500 lowercase">(optional)</span>:
+                </label>
+                <input type="text" id="clientName" name="name_of_client" placeholder="e.g. Juan Dela Cruz" maxlength="100" autocomplete="name" class="csm-paper-input">
+              </div>
+              <div class="p-3" id="group-staffAssisted">
+                <label for="staffAssisted" class="block text-[11px] font-bold text-slate-900 uppercase mb-1">
+                  Staff Who Assisted You <span class="font-normal text-slate-500 lowercase">(optional)</span>:
+                </label>
+                <select id="staffAssisted" name="staff_assisted" class="csm-paper-select" aria-label="Staff who assisted you">
+                  <option value="">-- Select Attending Staff --</option>
+                  {% for staff in staff_members %}
+                    <option value="{{ staff.id }}">{{ staff.get_full_name|default:staff.username }}</option>
+                  {% endfor %}
+                </select>
+              </div>
             </div>
           </div>
         </div>

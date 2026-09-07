@@ -99,6 +99,60 @@ class SubmitFeedbackAutoAnalysisTests(TestCase):
         entry = FeedbackEntry.objects.get()
         self.assertEqual(entry.sentiment, FeedbackEntry.NOT_APPLICABLE)
 
+    def test_submit_full_csm_form_saves_staff_assisted(self):
+        from django.contrib.auth.models import User
+        staff_user = User.objects.create_user(
+            username='maria_santos',
+            first_name='Maria',
+            last_name='Santos',
+            is_staff=True,
+            is_active=True,
+        )
+        payload = {
+            'date_time': '2026-08-29T10:30',
+            'contact_no': '09171234567',
+            'email_address': 'juan@example.com',
+            'age': 35,
+            'client_type': 'Citizen',
+            'sex': 'Male',
+            'name_of_client': 'Juan Dela Cruz',
+            'staff_assisted': staff_user.id,
+            'staff_name': 'Maria Santos',
+            'services_availed': ['KonSulTa Registration (5)'],
+            'sqd0': 5,
+        }
+        response = self._submit(payload)
+        self.assertEqual(response.status_code, 201)
+        entry = FeedbackEntry.objects.latest('id')
+        self.assertEqual(entry.staff_assisted, staff_user)
+        self.assertEqual(entry.staff_name, 'Maria Santos')
+        self.assertEqual(entry.attending_staff_display, 'Maria Santos')
+
+    def test_index_page_renders_active_staff_only_and_excludes_superusers(self):
+        from django.contrib.auth.models import User
+        # Staff member (should appear)
+        User.objects.create_user(
+            username='clerk_pedro',
+            first_name='Pedro',
+            last_name='Penduko',
+            is_staff=True,
+            is_superuser=False,
+            is_active=True,
+        )
+        # Superuser / Administrator (should NOT appear)
+        User.objects.create_superuser(
+            username='boss_admin',
+            email='boss@philhealth.gov.ph',
+            password='password123',
+            first_name='Boss',
+            last_name='Administrator',
+        )
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Pedro Penduko')
+        self.assertNotContains(response, 'Boss Administrator')
+        self.assertContains(response, 'id="staffAssisted"')
+
 
 class SentimentServiceTests(TestCase):
     def test_analyze_comment_with_form_headers(self):

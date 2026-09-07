@@ -496,7 +496,9 @@ function applyFilters(keepPage = false) {
                          || r.experience.toLowerCase().includes(q)
                          || (r.category||'').toLowerCase().includes(q)
                          || r.date.includes(q)
-                         || (r.sentiment||'').toLowerCase().includes(q);
+                         || (r.sentiment||'').toLowerCase().includes(q)
+                         || (r.staff||'').toLowerCase().includes(q)
+                         || (r.name_of_client||'').toLowerCase().includes(q);
     const matchE    = !experience || r.experience === experience;
     const matchC    = !category   || r.category   === category;
     const matchS    = !sentiment  || r.sentiment  === sentiment;
@@ -725,6 +727,24 @@ function renderTable() {
         ? `<tr class="detail-row" data-detail="${r.id}">
             <td colspan="${COLS}">
               <div class="detail-inner">
+                <div style="display:flex;flex-wrap:wrap;align-items:center;gap:18px;padding-bottom:12px;margin-bottom:16px;border-bottom:1px solid var(--border);">
+                  <div style="font-size:11px;display:flex;align-items:center;gap:6px;">
+                    <span class="material-icons-round" style="font-size:15px;color:var(--g-primary)" aria-hidden="true">badge</span>
+                    <span style="font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.05em;">Attending Staff:</span>
+                    <span style="font-weight:700;color:var(--g-primary);">${escHtml(r.staff || 'Not specified')}</span>
+                  </div>
+                  <div style="font-size:11px;display:flex;align-items:center;gap:6px;">
+                    <span class="material-icons-round" style="font-size:15px;color:var(--text-muted)" aria-hidden="true">person</span>
+                    <span style="font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.05em;">Client:</span>
+                    <span style="font-weight:600;color:var(--text-primary);">${escHtml(r.name_of_client || 'Anonymous')}</span>
+                  </div>
+                  ${r.client_type ? `
+                  <div style="font-size:11px;display:flex;align-items:center;gap:6px;">
+                    <span class="material-icons-round" style="font-size:15px;color:var(--text-muted)" aria-hidden="true">category</span>
+                    <span style="font-weight:700;text-transform:uppercase;color:var(--text-muted);letter-spacing:0.05em;">Type:</span>
+                    <span style="color:var(--text-secondary);">${escHtml(r.client_type)}</span>
+                  </div>` : ''}
+                </div>
                 <div class="detail-grid">
                   <div>
                     <div style="font-weight:700;margin-bottom:8px;text-transform:uppercase;font-size:10px;color:var(--text-muted);letter-spacing:0.05em;">Original Feedback</div>
@@ -827,12 +847,14 @@ function goPage(p) {
 
 /* ── EXPORT ── */
 function buildCSVRows(data) {
-  const header = ['ID','Date','Time','SQD Rating','Category','Sentiment','Status','Comment'];
+  const header = ['ID','Date','Time','SQD Rating','Category','Sentiment','Status','Staff Assisted','Client Name','Comment'];
   const body   = data.map(r => [
     r.id, r.date, r.time, r.rating,
     r.category || '',
     r.sentiment || '',
     r.status    || '',
+    `"${(r.staff||'').replace(/"/g,'""')}"`,
+    `"${(r.name_of_client||'').replace(/"/g,'""')}"`,
     `"${(r.comment||'').replace(/"/g,'""')}"`
   ]);
   return [header, ...body].map(r => r.join(',')).join('\n');

@@ -1,5 +1,6 @@
 import secrets
 
+from django.contrib.auth.models import User
 from django.db import models
 from django.db.utils import OperationalError, ProgrammingError
 from django.utils import timezone
@@ -68,6 +69,19 @@ class FeedbackEntry(models.Model):
     client_type = models.CharField(max_length=100, blank=True)
     sex = models.CharField(max_length=50, blank=True)
     name_of_client = models.CharField(max_length=100, blank=True)
+    staff_assisted = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assisted_feedbacks',
+        help_text='Staff member who assisted the client'
+    )
+    staff_name = models.CharField(
+        max_length=150,
+        blank=True,
+        help_text='Name of the staff member recorded at submission time'
+    )
     services_availed = models.JSONField(default=list, blank=True)
 
     cc1 = models.CharField(max_length=10, blank=True)
@@ -99,6 +113,14 @@ class FeedbackEntry(models.Model):
 
     def __str__(self):
         return f'Feedback #{self.pk} - {self.get_experience_display()}'
+
+    @property
+    def attending_staff_display(self):
+        if self.staff_name:
+            return self.staff_name
+        if self.staff_assisted:
+            return self.staff_assisted.get_full_name() or self.staff_assisted.username
+        return ''
 
 
 class FeedbackConfiguration(models.Model):
