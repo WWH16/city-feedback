@@ -147,9 +147,9 @@
               </div>
               <div class="p-3" id="group-staffAssisted">
                 <label for="staffAssisted" class="block text-[11px] font-bold text-slate-900 uppercase mb-1">
-                  Staff Who Assisted You <span class="font-normal text-slate-500 lowercase">(optional)</span>:
+                  Staff Who Assisted You <span class="text-rose-600 font-bold" aria-hidden="true">*</span>:
                 </label>
-                <select id="staffAssisted" name="staff_assisted" class="csm-paper-select" aria-label="Staff who assisted you"{% if not staff_members %} disabled{% endif %}>
+                <select id="staffAssisted" name="staff_assisted" class="csm-paper-select" aria-label="Staff who assisted you" required{% if not staff_members %} disabled{% endif %}>
                   <option value="">{% if staff_members %}-- Select Attending Staff --{% else %}-- No Attending Staff Listed --{% endif %}</option>
                   {% for staff in staff_members %}
                     <option value="{{ staff.id }}">{{ staff.get_full_name|default:staff.username }}</option>

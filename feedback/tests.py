@@ -183,6 +183,27 @@ class SubmitFeedbackAutoAnalysisTests(TestCase):
         self.assertContains(response, 'disabled')
         self.assertContains(response, '-- No Attending Staff Listed --')
 
+    def test_submit_feedback_requires_staff_selection_when_active_staff_exist(self):
+        from django.contrib.auth.models import User
+        User.objects.create_user(
+            username='staff_test',
+            first_name='Test',
+            last_name='Staff',
+            is_staff=True,
+            is_active=True,
+            is_superuser=False,
+        )
+        payload = {
+            'experience': 'Strongly Agree',
+            'comment': 'Good service',
+            'sqd0': 5,
+        }
+        response = self._submit(payload)
+        self.assertEqual(response.status_code, 400)
+        data = json.loads(response.content.decode('utf-8'))
+        self.assertFalse(data.get('ok'))
+        self.assertEqual(data.get('error'), 'Please select the staff member who assisted you.')
+
 
 class SentimentServiceTests(TestCase):
     def test_analyze_comment_with_form_headers(self):

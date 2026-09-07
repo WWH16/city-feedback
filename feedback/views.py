@@ -133,6 +133,15 @@ def submit_feedback(request):
         except (ValueError, TypeError):
             pass
 
+    has_active_staff = User.objects.filter(
+        is_active=True,
+        is_staff=True,
+        is_superuser=False,
+    ).exists()
+
+    if has_active_staff and not staff_user:
+        return JsonResponse({'ok': False, 'error': 'Please select the staff member who assisted you.'}, status=400)
+
     entry = FeedbackEntry.objects.create(
         experience=experience,
         comment=comment,

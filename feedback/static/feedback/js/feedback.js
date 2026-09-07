@@ -49,6 +49,7 @@ var REQUIRED_FIELDS = [
   { kind: 'input', id: 'clientAge', label: 'Age' },
   { kind: 'radio', name: 'client_type', groupId: 'group-clientType', label: 'Client Type' },
   { kind: 'radio', name: 'sex', groupId: 'group-sex', label: 'Sex' },
+  { kind: 'select', id: 'staffAssisted', groupId: 'group-staffAssisted', label: 'Staff Who Assisted You' },
   { kind: 'radio', name: 'cc1', groupId: 'cc1Block', label: 'CC1 Answer' },
   { kind: 'radio', name: 'cc2', groupId: 'cc2Block', label: 'CC2 Answer' },
   { kind: 'radio', name: 'cc3', groupId: 'cc3Block', label: 'CC3 Answer' },
@@ -67,15 +68,19 @@ var REQUIRED_FIELDS = [
 var validationAttempted = false;
 
 function fieldGroupEl(field) {
-  if (field.kind === 'input') {
+  if (field.groupId) {
+    var grp = document.getElementById(field.groupId);
+    if (grp) return grp;
+  }
+  if (field.kind === 'input' || field.kind === 'select') {
     var input = document.getElementById(field.id);
     return input ? input.parentElement : null;
   }
-  return field.groupId ? document.getElementById(field.groupId) : null;
+  return null;
 }
 
 function fieldFocusEl(field) {
-  if (field.kind === 'input') return document.getElementById(field.id);
+  if (field.kind === 'input' || field.kind === 'select') return document.getElementById(field.id);
   if (field.kind === 'checkbox') return document.getElementById(field.id);
   var checked = document.querySelector('input[name="' + field.name + '"]:checked');
   if (checked) return checked;
@@ -86,6 +91,10 @@ function isFieldValid(field) {
   if (field.kind === 'input') {
     var input = document.getElementById(field.id);
     return input ? input.checkValidity() : true;
+  }
+  if (field.kind === 'select') {
+    var select = document.getElementById(field.id);
+    return select ? (select.disabled || (!!select.value && select.checkValidity())) : true;
   }
   if (field.kind === 'checkbox') {
     var box = document.getElementById(field.id);
@@ -124,7 +133,7 @@ function setFieldInvalid(field, invalid) {
 
   var msg = ensureErrorMsgEl(field, groupEl);
 
-  if (field.kind === 'input') {
+  if (field.kind === 'input' || field.kind === 'select') {
     var input = document.getElementById(field.id);
     if (input) {
       input.classList.toggle('field-invalid-input', invalid);
@@ -141,7 +150,9 @@ function setFieldInvalid(field, invalid) {
     if (textEl) {
       textEl.textContent = field.kind === 'checkbox'
         ? 'Please check this box to continue.'
-        : (field.kind === 'radio' ? 'Please select one option.' : 'This field is required.');
+        : (field.kind === 'select'
+            ? 'Please select the staff member who assisted you.'
+            : (field.kind === 'radio' ? 'Please select one option.' : 'This field is required.'));
     }
     msg.hidden = !invalid;
   }

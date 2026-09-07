@@ -356,6 +356,7 @@
             <th style="width:60px">ID</th>
             <th style="min-width:110px">Date &amp; Time</th>
             <th style="min-width:160px">SQD Rating</th>
+            <th style="min-width:140px">Attending Staff</th>
             <th style="min-width:120px">Category</th>
             <th style="min-width:100px">Sentiment</th>
             <th style="min-width:110px">Status</th>
@@ -512,7 +513,7 @@ function applyFilters(keepPage = false) {
     const matchC    = !category   || r.category   === category;
     const matchS    = !sentiment  || r.sentiment  === sentiment;
     const matchSt   = !status     || r.status     === status;
-    const matchStaff = !staffFilter ? true : (staffFilter === '__unassigned__' ? !r.staff : r.staff === staffFilter);
+    const matchStaff = !staffFilter || r.staff === staffFilter;
     return matchQ && matchE && matchC && matchS && matchSt && matchStaff && inDateRange(r);
   });
   const maxPage = Math.max(1, Math.ceil(filteredRows.length / pageSize));
@@ -657,7 +658,7 @@ function renderTable() {
   const end   = Math.min(start + pageSize, filteredRows.length);
   const rows  = filteredRows.slice(start, end);
 
-  const COLS = 9; /* checkbox + id + date + rating + category + sentiment + status + comment + expand */
+  const COLS = 10; /* checkbox + id + date + rating + staff + category + sentiment + status + comment + expand */
 
   if (!rows.length) {
     body.innerHTML = `<tr><td colspan="${COLS}">
@@ -695,6 +696,12 @@ function renderTable() {
           <span class="rating-chip ${rCfg.cls}">
             <span class="material-icons-round">${rCfg.icon}</span>${r.rating}
           </span>
+        </td>
+        <td>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text-primary);white-space:nowrap;">
+            <span class="material-icons-round" style="font-size:15px;color:var(--g-primary);" aria-hidden="true">badge</span>
+            <span>${escHtml(r.staff || '—')}</span>
+          </div>
         </td>
         <td>
           <select id="cat-sel-${r.id}"
@@ -1071,12 +1078,9 @@ function populateStaffFilter() {
   const staffSelect = document.getElementById('staffFilter');
   if (!staffSelect) return;
   const staffSet = new Set();
-  let hasUnassigned = false;
   ALL_DATA.forEach(r => {
     if (r.staff && r.staff.trim()) {
       staffSet.add(r.staff.trim());
-    } else {
-      hasUnassigned = true;
     }
   });
   const currentVal = staffSelect.value;
@@ -1087,12 +1091,6 @@ function populateStaffFilter() {
     opt.textContent = name;
     staffSelect.appendChild(opt);
   });
-  if (hasUnassigned) {
-    const unassignedOpt = document.createElement('option');
-    unassignedOpt.value = '__unassigned__';
-    unassignedOpt.textContent = '— Unassigned Staff —';
-    staffSelect.appendChild(unassignedOpt);
-  }
   staffSelect.value = currentVal;
 }
 
